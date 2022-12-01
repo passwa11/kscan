@@ -18,7 +18,7 @@ jobs:
     - name: linux Build
       run: |
         go mod tidy
-        go build kscan.go -o kscan_amd64 -v
+        go build -o kscan_amd64 -v kscan.go
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2.3.1
       with:
@@ -42,7 +42,7 @@ jobs:
     - name: mac Build
       run: |
         go mod tidy
-        go build kscan.go -o kscan_darwin -v
+        go build -o kscan_darwin -v kscan.go
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2.3.1
       with:
@@ -66,7 +66,7 @@ jobs:
     - name: Windows Build
       run: |
         go mod tidy
-        go build kscan.go -o kscan64.exe -v
+        go build -o kscan64.exe -v kscan.go
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2.3.1
       with:
