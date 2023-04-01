@@ -2,11 +2,12 @@ package app
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"kscan/core/hydra"
 	"kscan/core/slog"
+	"kscan/lib/misc"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -39,56 +40,6 @@ type Config struct {
 	NotMatch string
 }
 
-type JSONWriter struct {
-	f *os.File
-}
-
-func (jw *JSONWriter) Push(m map[string]string) {
-	stat, err := jw.f.Stat()
-	if err != nil {
-		slog.Println(slog.ERROR, err)
-	}
-	jw.f.Seek(stat.Size()-1, 0)
-	jsonBuf, _ := json.Marshal(m)
-	jsonBuf = append(jsonBuf, []byte("]")...)
-	if stat.Size() != 2 {
-		jsonBuf = append([]byte(","), jsonBuf...)
-	}
-	jw.f.Write(jsonBuf)
-}
-
-type CSVWriter struct {
-	f     *csv.Writer
-	title []string
-}
-
-func (cw *CSVWriter) inTitle(title string) bool {
-	for _, value := range cw.title {
-		if value == title {
-			return true
-		}
-	}
-	return false
-}
-
-func (cw *CSVWriter) Push(m map[string]string) {
-	var cells []string
-	for _, key := range cw.title {
-		if value, ok := m[key]; ok {
-			cells = append(cells, value)
-			delete(m, key)
-		} else {
-			cells = append(cells, "")
-		}
-	}
-	for key, value := range m {
-		cells = append(cells, value)
-		cw.title = append(cw.title, key)
-	}
-	cw.f.Write(cells)
-	cw.f.Flush()
-}
-
 var Setting = New()
 
 func ConfigInit() {
@@ -98,6 +49,7 @@ func ConfigInit() {
 		Setting.Target = args.Target
 	}
 	Setting.loadPort()
+	Setting.loadExcludedPort()
 	Setting.loadOutput()
 	Setting.loadScanPing()
 	Setting.Timeout = time.Duration(args.Timeout) * time.Second
@@ -147,13 +99,13 @@ func loadOutputJSON(path string) *JSONWriter {
 	if err != nil {
 		slog.Println(slog.ERROR, err)
 	}
-	jw := &JSONWriter{f}
+	jw := &JSONWriter{f, &sync.Mutex{}}
 	jw.f.Seek(0, 0)
 	_, err = jw.f.WriteString(`[]`)
 	if err != nil {
 		slog.Println(slog.ERROR, err)
 	}
-	return &JSONWriter{f}
+	return &JSONWriter{f, &sync.Mutex{}}
 }
 
 func loadOutputCSV(path string) *CSVWriter {
@@ -198,6 +150,30 @@ func (c *Config) loadPort() {
 	if len(c.Port) == 0 {
 		c.Port = TOP_1000[:400]
 	}
+
+	c.Port = misc.RemoveDuplicateElement(c.Port)
+}
+
+func (c *Config) loadExcludedPort() {
+	if len(Args.ExcludedPort) == 0 {
+		return
+	}
+
+	var availablePort = misc.CopySlice(c.Port)
+	var ignoredPort []int
+
+	for i, p := range c.Port {
+		for _, ep := range Args.ExcludedPort {
+			if p == ep {
+				var l = len(ignoredPort)
+				availablePort = append(availablePort[:i-l], availablePort[i-l+1:]...)
+				ignoredPort = append(ignoredPort, p)
+				break
+			}
+		}
+	}
+	c.Port = availablePort
+	slog.Println(slog.WARN, "本次扫描用户屏蔽的端口:", ignoredPort)
 }
 
 func (c *Config) loadOutput() {
